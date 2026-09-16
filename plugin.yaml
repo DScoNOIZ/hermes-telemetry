@@ -18,3 +18,4 @@ provides_hooks:
   - subagent_stop
   - pre_llm_call
   - pre_tool_call
+  - subagent_start
