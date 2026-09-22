@@ -27,6 +27,7 @@
 16. [PluginContext API](#plugincontext-api)
 17. [Valid Hooks Reference](#valid-hooks-reference)
 18. [Dashboard Plugin Surface](#dashboard-plugin-surface)
+19. [Dashboard i18n (EN/RU toggle)](#dashboard-i18n-enru-toggle)
 
 ---
 
@@ -2087,3 +2088,70 @@ Both surfaces are upgraded with a single `git pull` in
 `~/.hermes/plugins/hermes-telemetry`. The manifest version is pinned to
 `__version__` by `test_plugin_version_matches_package`, so a release tag
 implicitly ships both surfaces in lockstep.
+
+---
+
+## Dashboard i18n (EN/RU toggle)
+
+Standalone dashboard (`dashboard/index.html`) is EN-first with a deterministic
+EN→RU toggle (no backend, no build step, no new deps).
+
+### Source of truth
+
+- **Dictionary file:** `dashboard/i18n_ru.js` — EN keys (source), RU overlay.
+  Pretty-printed one key per line, loaded via `<script src="i18n_ru.js">`
+  before the main inline script. Served as a static asset by `serve.py`
+  (its `Handler.do_GET` serves any file under `SCRIPT_DIR` via
+  `super().do_GET()`; no extra route needed). Inline fallback is the EN
+  source itself — no separate extraction step is required to keep serving
+  working, but the extracted file is the canonical, diff-friendly form.
+- **Key format:** EN string is the key, RU string is the value. Example:
+  `"Home": "Главная"`. Dynamic keys embed `${0}`, `${1}` placeholders:
+  `"Window: ${0} → ${1} (${2})": "Окно: ${0} → ${1} (${2})"`.
+- **Fallback:** missing RU entry → return the EN source verbatim (visible gap,
+  never silent). Do not add a RU-only key — every key must be a valid EN source.
+
+### Static vs dynamic
+
+- **Static keys** (`k.indexOf('${') === -1`): direct `i18nRU[en]` lookup.
+- **Dynamic keys** (`${N}`): regex fallback. The placeholder is escaped via
+  `k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\$\\\{[^}]*\\\}/g, '(.*)')`
+  — note the escaped `\$` (the unescaped `$` is a regex end-anchor and breaks the
+  fallback; the bug caused 89/297 dynamic strings to stay untranslated). Captured
+  groups are substituted with a **function** replacement
+  `out.replace('${' + i + '}', () => g)` so a literal `$&` in the provider/model
+  name does not expand to the whole match.
+- **Leaf text only:** translate inner text (`Model:`, `Tokens`, `Home`), not
+  HTML/SVG blobs. The 136 markup-keyed entries (notably the `<rect>` chart case)
+  were refactored to build structure once and translate leaves; `dashboard/i18n.test.js`
+  asserts no key contains `<` and checks a chart leaf (`Model: Other`).
+
+### Persistence and chrome
+
+- **Default:** `__dashLang = 'en'` (`document.documentElement.lang` synced on load
+  and on toggle). `<html lang="en">` and `<title>hermes-telemetry dashboard</title>`
+  are English by default — the EN source is the document language.
+- **Persistence key:** `hermes_telemetry_lang` in `localStorage` (un-namespaced
+  from the generic `dashboard_lang` to avoid collision). Survives reload.
+- **No `location.reload()`:** `__swapLang()` does an in-place re-render
+  (`__syncLangBtn()` → `__applyStaticI18n()` → `loadAll({showShell:false})`),
+  preserving drilldown/filters/scroll. `__applyStaticI18n` snapshots original
+  text/attr/title in `__staticI18nOrig` so switching EN→RU→EN restores verbatim.
+- **Badge class from raw value:** `badge(raw, map, label)` resolves `class` from the
+  raw status (`ok`/`error`/`interrupted`/`running`) and renders `label` separately.
+  `statusBadge(raw)` maps `ok:'OK'` (Latin, not Cyrillic `ОК`) via
+  `statusLabelsRU`/`statusLabelsEN`. Extra statuses `timeout`/`failed`/`cancelled`
+  were removed — only the four real run statuses remain (subagent `child_status`
+  never reaches runs).
+
+### Tests
+
+`dashboard/i18n.test.js` (`node --test`, no deps) asserts: static key both modes,
+dynamic Window label round-trips EN, `$&` safety, RU chart-leaf sample, and that the
+old buggy regex (`\\$\\{`) fails to translate dynamic keys (regression proof).
+
+### Known limitation
+
+Only the standalone dashboard (`dashboard/index.html`) is localized; the plugin
+widget (`dashboard/dist/index.js`) stays English, so running both surfaces gives
+a mixed-language UI.
