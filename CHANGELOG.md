@@ -18,13 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged. `hermes telemetry pricing drift`/`pricing backfill` remain useful
   for auditing `pricing.yaml` itself but are no longer required to keep costs
   accurate. See `ONBOARDING.md § Pricing Engine → Lookup priority chain`.
-### Fixed — Dashboard i18n: EN source, RU overlay, badge and regex regressions (#92)
+### Added — Dashboard EN/RU language toggle (#92)
 
-- **Source inversion + leaf-only:** dictionary is now EN keys (source), `ru` overlay in the extracted `dashboard/i18n_ru.js` (one key per line, pretty-printed, loaded via `<script src="i18n_ru.js">` and served by `serve.py` static handler). The 136 markup-keyed entries (notably the `<rect>` chart) were refactored to translate leaf text only (`Model:`, `Tokens` etc.) with structure built once. Coverage: every previously-translated string still translates; missing RU falls back to the EN source (visible gap, never silent). RU output byte-identical for sampled keys incl. one chart label (verified in `dashboard/i18n.test.js`).
-- **Badge regression:** `badge(raw, map, label)` now resolves `class` from the raw status value; `statusBadge(raw)` passes `raw` for the class and a translated `label` separately. All badges were grey in both languages before because the class was resolved from the translated label (`Ошибка` never matched `error`). Map reverted to the four real run statuses (`ok`/`error`/`interrupted`/`running`) — `timeout`/`failed`/`cancelled` were inert additions and were removed.
-- **Regex + `$&`:** fixed the template-literal fallback (`\$` was unescaped, so `$` acted as end-anchor and 89/297 dynamic strings stayed Russian in EN mode). Correct pattern is `\\\$\\\{[^}]*\\\}` and replacement uses a function (`() => g`) so a literal `$&` in provider/model names is not expanded. Added `dashboard/i18n.test.js` (`node --test`, no deps) asserting static/dynamic round-trip, `$&` safety, and that the old code fails on dynamic keys.
-- **Default EN:** `__dashLang` default is now `'en'`, restoring `<html lang="en">` and English `<title>hermes-telemetry dashboard</title>` and syncing `document.documentElement.lang` on load and on toggle (per PR description).
-- **Toggle UX:** `__swapLang()` re-renders in place (`__syncLangBtn()` + `__applyStaticI18n()` + `loadAll({showShell:false})`) instead of `location.reload()`, preserving drilldown/filters/scroll. Persistence key is `hermes_telemetry_lang` (un-namespaced from `dashboard_lang`). `ОК` (Cyrillic) → Latin `OK` for `ok` status and the `OK` dictionary entry.
+- Standalone dashboard (`dashboard/index.html`) is EN-first with an EN↔RU toggle:
+  EN strings are the source of truth, `dashboard/i18n_ru.js` is the RU overlay
+  (one key per line, leaf text only), `dashboard/i18n.js` holds the shipped
+  `i18n_t`/`__DYN`/`__RU` logic shared by the page and `dashboard/i18n.test.js`.
+  Default `en` with `<html lang="en">`, `document.documentElement.lang` synced on
+  load and toggle, in-place re-render preserving drilldown/filters/scroll,
+  persistence key `hermes_telemetry_lang`. Status badge class resolves from the
+  raw value; EN path is identity, RU the only override. Known limitation: the
+  plugin widget (`dashboard/dist/index.js`) stays English.
 
 ## [0.8.0] - 2026-07-09
 

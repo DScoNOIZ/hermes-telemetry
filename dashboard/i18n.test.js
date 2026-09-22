@@ -1,18 +1,9 @@
 /**
- * dashboard/i18n.test.js — i18n round-trip + regression harness.
- * Runnable: node --test dashboard/i18n.test.js (no deps, stdlib only)
+ * dashboard/i18n.test.js — i18n round-trip + regression harness (shipped code).
+ * Runnable: node --test dashboard/ (no deps, stdlib only)
  *
- * Spec: EN is source, RU is overlay (dashboard/i18n_ru.js). Tests:
- *  - static key both modes
- *  - one dynamic key round-trips EN (Window label)
- *  - $& in replacement safe via function replacement
- *  - RU mode output sample inc chart label (Model: Other, Tokens)
- *  - old buggy regex (\\$\\{) fails to translate dynamic keys (demonstrates bug)
- *
- * Old buggy function (copied for reference — must FAIL):
- *   const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\$\\{[^}]*\\}/g, '(.*)');
- *   // \\$  == backslash + end-anchor, never matches \$\{, so 89/297 dynamic strings stuck.
- *   // plus string replacement: out.replace('${0}', g)  -> $& expands to whole match.
+ * Loads SHIPPED code via vm in one context: i18n_ru.js + i18n.js.
+ * No local copy of i18n_t — drift fails CI by construction.
  */
 
 import { describe, it } from 'node:test';
@@ -21,110 +12,109 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 
-// Load RU overlay from dashboard/i18n_ru.js (evaluated in isolated context)
-const i18nPath = path.join(import.meta.dirname, 'i18n_ru.js');
-const i18nSrc = fs.readFileSync(i18nPath, 'utf8');
-// Extract dict via vm (avoid polluting global const)
+const dir = import.meta.dirname;
+const ruSrc = fs.readFileSync(path.join(dir, 'i18n_ru.js'), 'utf8');
+const implSrc = fs.readFileSync(path.join(dir, 'i18n.js'), 'utf8');
+const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+
+// One shared context: dict first, then implementation (needs i18nRU global).
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(i18nSrc, ctx);
-const i18nRU = ctx.i18nRU;
+vm.runInContext(ruSrc, ctx, { filename: 'i18n_ru.js' });
+vm.runInContext(implSrc, ctx, { filename: 'i18n.js' });
+const shipped = ctx.__i18n;
+assert.ok(shipped && typeof shipped.i18n_t === 'function', 'shipped __i18n.i18n_t loaded');
+const i18nRU = ctx.i18nRU ?? shipped.__RU;
 assert.ok(i18nRU && typeof i18nRU === 'object', 'i18nRU loaded');
 assert.ok(Object.keys(i18nRU).length > 100, 'dict not empty');
 
-// Fixed implementation (current dashboard/index.html:373ff)
-let __dashLang = 'en';
-function i18n_t_fixed(en) {
-  if (__dashLang !== 'ru' || en == null) return en;
-  if (i18nRU[en] != null) return i18nRU[en];
-  for (const k in i18nRU) {
-    if (k.indexOf('${') === -1) continue;
-    const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\$\\\{[^}]*\\\}/g, '(.*)');
-    const re = new RegExp('^' + pattern + '$');
-    const m = en.match(re);
-    if (m) {
-      let out = i18nRU[k];
-      m.slice(1).forEach((g, i) => { out = out.replace('${' + i + '}', () => g); });
-      return out;
-    }
-  }
-  return en;
+function ru(en) {
+  shipped.lang = 'ru';
+  return shipped.i18n_t(en);
+}
+function en(enVal) {
+  shipped.lang = 'en';
+  return shipped.i18n_t(enVal);
 }
 
-// Old buggy implementation (must FAIL on dynamic key)
-function i18n_t_old(en) {
-  // intentionally buggy regex: \\$\\{  ($ unescaped -> end anchor)
-  if (__dashLang !== 'ru' || en == null) return en;
-  if (i18nRU[en] != null) return i18nRU[en];
-  for (const k in i18nRU) {
-    if (k.indexOf('${') === -1) continue;
-    const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\$\\{[^}]*\\}/g, '(.*)');
-    const re = new RegExp('^' + pattern + '$');
-    const m = en.match(re);
-    if (m) {
-      let out = i18nRU[k];
-      // string replacement (vulnerable to $&)
-      m.slice(1).forEach((g, i) => { out = out.replace('${' + i + '}', g); });
-      return out;
-    }
-  }
-  return en;
+// Static literals i18n_t('...') / i18n_t("...") in index.html (no backticks).
+function staticLiterals(src) {
+  const re = /i18n_t\(\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*\)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(src))) out.push(eval(m[1])); // eslint-disable-line no-eval
+  return [...new Set(out)];
 }
 
-describe('i18n EN source -> RU overlay', () => {
-  it('static key both modes', () => {
-    __dashLang = 'en';
-    assert.equal(i18n_t_fixed('Home'), 'Home');
-    __dashLang = 'ru';
-    assert.equal(i18n_t_fixed('Home'), 'Главная');
-    // OK is Latin in both (task minor)
-    __dashLang = 'en';
-    assert.equal(i18n_t_fixed('OK'), 'OK');
-    __dashLang = 'ru';
-    assert.equal(i18n_t_fixed('OK'), 'OK');
+describe('i18n EN source -> RU overlay (shipped i18n.js)', () => {
+  it('A1 RU OK→Успех / EN OK→OK', () => {
+    assert.equal(en('OK'), 'OK');
+    assert.equal(ru('OK'), 'Успех');
   });
 
-  it('one dynamic key round-trips EN (Window label)', () => {
-    const enWindow = 'Window: 2026-01-01 → 2026-01-02 (UTC)';
-    __dashLang = 'en';
-    assert.equal(i18n_t_fixed(enWindow), enWindow);
-    __dashLang = 'ru';
-    // RU overlay: "Window: ${0} → ${1} (${2})": "Окно: ${0} → ${1} (${2})"
-    assert.equal(i18n_t_fixed(enWindow), 'Окно: 2026-01-01 → 2026-01-02 (UTC)');
+  it('A2 Total→Итого', () => {
+    assert.equal(en('Total'), 'Total');
+    assert.equal(ru('Total'), 'Итого');
   });
 
-  it('$& in replacement safe (function replacement)', () => {
-    // Use a dynamic key with one placeholder; provider/model name containing $&
-    // e.g. "Model: ${0}" -> RU "Модель: ${0}"
-    const enVal = 'Model: $&';
-    __dashLang = 'ru';
-    const got = i18n_t_fixed(enVal);
-    assert.equal(got, 'Модель: $&');
-    // old string-replacement would expand $& to the whole match "${0}" inside RU template
-    // so old result would be 'Модель: ${0}' or similar, not 'Модель: $&'
-    const gotOld = i18n_t_old(enVal);
-    assert.notEqual(gotOld, 'Модель: $&', 'old $& handling must be broken');
+  it('shadowing: every dynamic key V-substitutes, most-specific-first', () => {
+    // __DYN precompiled most-specific-first (static length desc).
+    // NOTE: shipped.__DYN lives in a vm realm — normalize to main-realm
+    // arrays first, else deepStrictEqual fails on prototype, not values.
+    const lens = [...shipped.__DYN.map((d) => d.statLen)];
+    assert.deepEqual([...lens].sort((a, b) => b - a), lens, '__DYN sorted desc');
+    const dynKeys = Object.keys(i18nRU).filter((k) => k.includes('${'));
+    assert.ok(dynKeys.length > 10, 'dynamic keys present');
+    for (const k of dynKeys) {
+      const n = (k.match(/\$\{\d+\}/g) || []).length;
+      const vals = Array.from({ length: n }, (_, i) => `V${i}`);
+      let enStr = k;
+      let ruStr = i18nRU[k];
+      vals.forEach((v, i) => {
+        enStr = enStr.split('${' + i + '}').join(v);
+        ruStr = ruStr.split('${' + i + '}').join(v);
+      });
+      assert.equal(en(enStr), enStr, `EN passthrough: ${k}`);
+      assert.equal(ru(enStr), ruStr, `RU dynamic: ${k}`);
+    }
+    // Regression spot: Window label with 3 groups.
+    assert.equal(
+      ru('Window: 2026-01-01 → 2026-01-02 (UTC)'),
+      'Окно: 2026-01-01 → 2026-01-02 (UTC)',
+    );
   });
 
-  it('RU sample outputs inclusive chart label (100% coverage spot check)', () => {
-    __dashLang = 'ru';
-    assert.equal(i18n_t_fixed('Model: Other'), 'Модель: другие');
-    assert.equal(i18n_t_fixed('Tokens'), 'Токены');
-    assert.equal(i18n_t_fixed('Cache Read'), 'Чтение кэша');
-    // leaf text not HTML blob: check that no markup key exists, but leaf translates
-    // The chart's "Model:" leaf is covered above; ensure no key contains '<rect'
+  it('coverage: every static i18n_t literal in index.html', () => {
+    const lits = staticLiterals(html);
+    assert.ok(lits.length > 200, `literals found (${lits.length})`);
+    const missing = [];
+    for (const lit of lits) {
+      assert.ok(!lit.includes('<'), `no markup literal: ${JSON.stringify(lit).slice(0, 120)}`);
+      shipped.lang = 'ru';
+      const got = shipped.i18n_t(lit);
+      assert.equal(typeof got, 'string', `string result: ${lit}`);
+      if (i18nRU[lit] != null) assert.equal(got, i18nRU[lit], `RU overlay: ${lit}`);
+      else {
+        assert.equal(got, lit, `EN fallback: ${lit}`);
+        missing.push(lit);
+      }
+    }
+    // Every static literal must have a RU key (reworded English = red build).
+    assert.deepEqual(missing.sort(), [], `all static literals keyed, missing: ${JSON.stringify(missing)}`);
+  });
+
+  it('$& safety (function replacement)', () => {
+    assert.equal(ru('Model: $&'), 'Модель: $&');
+    assert.equal(ru('Model: $`'), 'Модель: $`');
+    assert.equal(ru("Model: $'"), 'Модель: $\'');
+  });
+
+  it('chart leaf labels (no markup keys)', () => {
+    assert.equal(ru('Model: Other'), 'Модель: другие');
+    assert.equal(ru('Tokens'), 'Токены');
+    assert.equal(ru('Cache Read'), 'Чтение кэша');
     for (const k of Object.keys(i18nRU)) {
-      assert.ok(!k.includes('<'), `no markup key: ${JSON.stringify(k).slice(0,120)}`);
+      assert.ok(!k.includes('<'), `no markup key: ${JSON.stringify(k).slice(0, 120)}`);
     }
-  });
-
-  it('old buggy regex fails to translate dynamic keys (regression proof)', () => {
-    const enWindow = 'Window: 2026-01-01 → 2026-01-02 (UTC)';
-    __dashLang = 'ru';
-    const fixed = i18n_t_fixed(enWindow);
-    const buggy = i18n_t_old(enWindow);
-    assert.equal(fixed, 'Окно: 2026-01-01 → 2026-01-02 (UTC)');
-    assert.equal(buggy, enWindow, 'buggy regex must leave EN untranslated (demonstrates 89/297 stuck)');
-    assert.notEqual(buggy, fixed);
   });
 });

@@ -967,10 +967,9 @@ paid calls on the same pair are no-ops. The dashboard endpoint
 `GET /tier-transitions?window_hours=72` reads from this table (read-only,
 `PRAGMA query_only=ON`). The widget (`TierTransitionsWidget`) is rendered
 **inside `TelemetryPage`**, NOT via `registerSlot`: no shell slot in the
-catalogue known at the time fit a "tier change" surface, and registering an
-unknown slot name is a silent no-op. (The catalogue has since grown —
-`header-banner` may now fit. See
-[Dashboard Plugin Surface](#dashboard-plugin-surface) § Slot catalogue.) The widget hides itself when no
+verified catalogue (`sessions:top`, `cron:top`, `header-right`,
+`analytics:bottom`) fits a "tier change" surface, and registering an
+unknown slot name is a silent no-op. The widget hides itself when no
 transitions fall in the window, so the page is unchanged during the happy
 path.
 
@@ -2030,48 +2029,16 @@ Verified fields:
   (`web_server.py:11382-11391`).
 - `slots` is **documentation only**. The real binding happens in the JS
   bundle via `window.__HERMES_PLUGINS__.registerSlot(...)`
-  (extending-the-dashboard.md § *Augmenting built-in pages*).
+  (extending-the-dashboard.md, line 696).
 - `api` is validated by `_safe_plugin_api_relpath` (`web_server.py:11296-11330`);
   absolute paths or `..` traversal cause backend mount to be skipped (the
   static assets still load). This is fix for GHSA-5qr3-c538-wm9j.
 
-### Slot catalogue (verified 2026-08-24)
+### Slot widgets
 
-The shell renders `<PluginSlot name="..." />` only for the names below. Source:
-`website/docs/user-guide/features/extending-the-dashboard.md` § *Slot catalogue*
-(upstream lines 577-604 at time of writing — prefer the section heading over the
-line numbers, which move).
-
-**Shell-wide** — render anywhere in the app chrome:
-
-| Slot | Location |
-|------|----------|
-| `backdrop` | Inside the `<Backdrop />` layer stack, above the noise layer. |
-| `header-left` | Before the Hermes brand in the top bar. |
-| `header-right` | Before the theme/language switchers in the top bar. |
-| `header-banner` | Full-width strip below the nav. |
-| `sidebar` | Cockpit sidebar rail — **only rendered when `layoutVariant === "cockpit"`**. |
-| `pre-main` | Above the route outlet (inside `<main>`). |
-| `post-main` | Below the route outlet (inside `<main>`). |
-| `footer-left` / `footer-right` | Footer cell content (replaces the default). |
-| `overlay` | Fixed-position layer above everything else. |
-
-**Page-scoped** — `:top` and `:bottom` on each built-in page:
-
-`sessions:*` · `analytics:*` · `logs:*` · `cron:*` · `skills:*` · `config:*` ·
-`env:*` · `docs:*` · `chat:*`
-
-`logs:top` sits above the filter toolbar and `logs:bottom` below the log viewer;
-`docs:top` sits above the iframe; `chat:*` is only active when embedded chat is
-enabled. Everything else is the plain top/bottom of the page content area.
-
-> **This list grew.** Until 2026-08-24 this section recorded four slots and
-> called them "the entire verified catalogue". That was true when written and
-> silently stopped being true. Treat any slot list in this repo as a snapshot,
-> re-verify against the upstream section before designing around it, and update
-> the date above when you do.
-
-### Slot widgets we register
+Page-scoped slots render only on the named built-in page. The slot
+catalogue (`extending-the-dashboard.md:590-600`) was verified against
+source; the four slots we register are:
 
 | Slot | Widget |
 |------|--------|
@@ -2080,35 +2047,24 @@ enabled. Everything else is the plain top/bottom of the page content area.
 | `header-right` | 24h spend + budget level (variant=destructive on hard breach). |
 | `analytics:bottom` | Daily cost line chart (vendored Chart.js served locally; CDN fallback only). |
 
-Four of the twenty-eight available slots. `manifest.json` lists the same four,
-but that field is documentation only — the binding happens in `dist/index.js`
-via `registerSlot()`.
-
 ### Slot names are NOT free-form — verify before adding new ones
 
-The shell only renders slots whose names appear in the catalogue above.
-Registering an unknown slot via `registerSlot()` is a silent no-op: the widget
-loads but nothing on the page ever mounts it. **Do not invent slot names** —
-`alerts:top` and `warnings:top`, for instance, do not exist.
+The shell only renders slots whose names appear in its catalogue
+(`extending-the-dashboard.md:590-600`). Registering an unknown slot via
+`registerSlot()` is a silent no-op: the widget loads but nothing on the
+page ever mounts it. **Do not invent slot names** — `alerts:top`,
+`warnings:top`, etc. do not exist. The four above are the entire
+verified catalogue as of this writing.
 
-If you need a visible surface and no slot fits, render the widget **inside
-`TelemetryPage`** (the plugin's own tab) — that page is fully under our control.
+If you need a new visible surface and none of the four fit, render the
+widget **inside `TelemetryPage`** (the plugin's own tab) instead — that
+page is fully under our control. The free→paid transitions widget is
+rendered this way (see `dist/index.js`, `TelemetryPage`), not via
+`registerSlot`, precisely because no shell slot fit.
 
-> **Revisit candidate.** The free→paid transitions widget renders inside
-> `TelemetryPage` on the recorded rationale that "no shell slot fits a tier
-> change surface". `header-banner` — a full-width strip below the nav — now
-> exists and is plausibly that surface. The decision predates it; re-evaluate
-> before assuming it still holds.
-
-Re-verify the catalogue against upstream before adding a slot:
-
-```
-https://raw.githubusercontent.com/NousResearch/hermes-agent/main/website/docs/user-guide/features/extending-the-dashboard.md
-```
-
-Note the path: the doc lives under `website/docs/user-guide/features/`, not
-`docs/`. A wrong path here 404s silently, which is exactly how the old
-four-slot list survived long past its expiry.
+When new slots are added upstream, re-verify the catalogue at
+`https://raw.githubusercontent.com/NousResearch/hermes-agent/main/docs/extending-the-dashboard.md`
+and update this table.
 
 The SDK does not currently expose an `useActiveSession` hook, so
 `sessions:top` shows the most recent run instead of the per-row session.
@@ -2239,11 +2195,12 @@ EN→RU toggle (no backend, no build step, no new deps).
 
 - **Dictionary file:** `dashboard/i18n_ru.js` — EN keys (source), RU overlay.
   Pretty-printed one key per line, loaded via `<script src="i18n_ru.js">`
-  before the main inline script. Served as a static asset by `serve.py`
-  (its `Handler.do_GET` serves any file under `SCRIPT_DIR` via
-  `super().do_GET()`; no extra route needed). Inline fallback is the EN
-  source itself — no separate extraction step is required to keep serving
-  working, but the extracted file is the canonical, diff-friendly form.
+  before `dashboard/i18n.js` (shipped `i18n_t`/`__DYN`/`__RU` logic, shared by
+  the page and `dashboard/i18n.test.js` via `vm`). Served as static assets by
+  `serve.py` (its `Handler.do_GET` serves any file under `SCRIPT_DIR` via
+  `super().do_GET()`; no extra route needed). If `/i18n_ru.js` 404s, the
+  `__RU` guard (`(typeof i18nRU !== 'undefined' && i18nRU) || {}`) keeps the
+  dashboard working with the EN source itself as fallback.
 - **Key format:** EN string is the key, RU string is the value. Example:
   `"Home": "Главная"`. Dynamic keys embed `${0}`, `${1}` placeholders:
   `"Window: ${0} → ${1} (${2})": "Окно: ${0} → ${1} (${2})"`.
@@ -2278,13 +2235,24 @@ EN→RU toggle (no backend, no build step, no new deps).
   text/attr/title in `__staticI18nOrig` so switching EN→RU→EN restores verbatim.
 - **Badge class from raw value:** `badge(raw, map, label)` resolves `class` from the
   raw status (`ok`/`error`/`interrupted`/`running`) and renders `label` separately.
-  `statusBadge(raw)` maps `ok:'OK'` (Latin, not Cyrillic `ОК`) via
-  `statusLabelsRU`/`statusLabelsEN`. Extra statuses `timeout`/`failed`/`cancelled`
+  `statusBadge(raw)` maps `ok:'OK'` (Latin, not Cyrillic `ОК`) via `statusLabelsRU`;
+  the EN path is identity (as on main) and RU is the only override, so casing
+  stays uniform. Extra statuses `timeout`/`failed`/`cancelled`
   were removed — only the four real run statuses remain (subagent `child_status`
   never reaches runs).
 
 ### Tests
 
-`dashboard/i18n.test.js` (`node --test`, no deps) asserts: static key both modes,
-dynamic Window label round-trips EN, `$&` safety, RU chart-leaf sample, and that the
-old buggy regex (`\\$\\{`) fails to translate dynamic keys (regression proof).
+`dashboard/i18n.test.js` (`node --test dashboard/i18n.test.js`, no deps) loads the
+shipped `dashboard/i18n.js` + `dashboard/i18n_ru.js` via `vm` (no local copy of
+`i18n_t` — drift fails CI by construction) and asserts: A1 (`OK`→`Успех` RU,
+`OK`→`OK` EN) and A2 (`Total: … tokens`→`Итого`), shadowing for every dynamic key
+(`V0`/`V1` substitution, most-specific-first), coverage of every static
+`i18n_t` literal in `index.html`, `$&` safety, and chart-leaf labels. CI runs it
+as `Dashboard i18n tests`.
+
+### Known limitation
+
+Only the standalone dashboard (`dashboard/index.html`) is localized; the plugin
+widget (`dashboard/dist/index.js`) stays English, so running both surfaces gives
+a mixed-language UI.
