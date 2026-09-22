@@ -2100,11 +2100,12 @@ EN→RU toggle (no backend, no build step, no new deps).
 
 - **Dictionary file:** `dashboard/i18n_ru.js` — EN keys (source), RU overlay.
   Pretty-printed one key per line, loaded via `<script src="i18n_ru.js">`
-  before the main inline script. Served as a static asset by `serve.py`
-  (its `Handler.do_GET` serves any file under `SCRIPT_DIR` via
-  `super().do_GET()`; no extra route needed). Inline fallback is the EN
-  source itself — no separate extraction step is required to keep serving
-  working, but the extracted file is the canonical, diff-friendly form.
+  before `dashboard/i18n.js` (shipped `i18n_t`/`__DYN`/`__RU` logic, shared by
+  the page and `dashboard/i18n.test.js` via `vm`). Served as static assets by
+  `serve.py` (its `Handler.do_GET` serves any file under `SCRIPT_DIR` via
+  `super().do_GET()`; no extra route needed). If `/i18n_ru.js` 404s, the
+  `__RU` guard (`(typeof i18nRU !== 'undefined' && i18nRU) || {}`) keeps the
+  dashboard working with the EN source itself as fallback.
 - **Key format:** EN string is the key, RU string is the value. Example:
   `"Home": "Главная"`. Dynamic keys embed `${0}`, `${1}` placeholders:
   `"Window: ${0} → ${1} (${2})": "Окно: ${0} → ${1} (${2})"`.
@@ -2139,16 +2140,21 @@ EN→RU toggle (no backend, no build step, no new deps).
   text/attr/title in `__staticI18nOrig` so switching EN→RU→EN restores verbatim.
 - **Badge class from raw value:** `badge(raw, map, label)` resolves `class` from the
   raw status (`ok`/`error`/`interrupted`/`running`) and renders `label` separately.
-  `statusBadge(raw)` maps `ok:'OK'` (Latin, not Cyrillic `ОК`) via
-  `statusLabelsRU`/`statusLabelsEN`. Extra statuses `timeout`/`failed`/`cancelled`
+  `statusBadge(raw)` maps `ok:'OK'` (Latin, not Cyrillic `ОК`) via `statusLabelsRU`;
+  the EN path is identity (as on main) and RU is the only override, so casing
+  stays uniform. Extra statuses `timeout`/`failed`/`cancelled`
   were removed — only the four real run statuses remain (subagent `child_status`
   never reaches runs).
 
 ### Tests
 
-`dashboard/i18n.test.js` (`node --test`, no deps) asserts: static key both modes,
-dynamic Window label round-trips EN, `$&` safety, RU chart-leaf sample, and that the
-old buggy regex (`\\$\\{`) fails to translate dynamic keys (regression proof).
+`dashboard/i18n.test.js` (`node --test dashboard/i18n.test.js`, no deps) loads the
+shipped `dashboard/i18n.js` + `dashboard/i18n_ru.js` via `vm` (no local copy of
+`i18n_t` — drift fails CI by construction) and asserts: A1 (`OK`→`Успех` RU,
+`OK`→`OK` EN) and A2 (`Total: … tokens`→`Итого`), shadowing for every dynamic key
+(`V0`/`V1` substitution, most-specific-first), coverage of every static
+`i18n_t` literal in `index.html`, `$&` safety, and chart-leaf labels. CI runs it
+as `Dashboard i18n tests`.
 
 ### Known limitation
 

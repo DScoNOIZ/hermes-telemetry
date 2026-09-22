@@ -11,6 +11,7 @@
   }
 </script>
 <script src="/i18n_ru.js"></script>
+<script src="/i18n.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #c9d1d9; min-height: 100vh; }
@@ -218,14 +219,14 @@
       <button id="tab-home" class="page-tab active" onclick="switchPage('home')">Home</button>
       <button id="tab-breakdown" class="page-tab" onclick="switchPage('breakdown')">Breakdown</button>
       <button id="tab-requests" class="page-tab" onclick="switchPage('requests')">Request</button>
-      <button id="tab-tools" class="page-tab" onclick="switchPage('tools')">Tools</button>
+      <button id="tab-tools" class="page-tab" onclick="switchPage('tools')">Tool</button>
       <button id="tab-errors" class="page-tab" onclick="switchPage('errors')">Error</button>
     </div>
   </div>
   <div class="actions">
     <span id="loadStatus" class="load-status">Idle</span>
     <button class="refresh-btn" onclick="loadAll({showShell:false})">&#x21bb; Refresh</button>
-<button id="langToggleBtn" class="refresh-btn" onclick="__swapLang()" title="Переключить язык / Switch language">🇬🇧 EN</button>
+<button id="langToggleBtn" class="refresh-btn" onclick="__swapLang()" title="Switch language" aria-label="Switch language">🇬🇧 EN</button>
     <div class="settings-menu">
       <button id="settingsToggle" class="settings-btn" onclick="toggleSettingsMenu(event)" aria-label="Dashboard settings" title="Dashboard settings">⚙</button>
       <div id="settingsPanel" class="settings-panel">
@@ -369,26 +370,6 @@
 </div>
 
 <script>
-/* i18n EN/RU toggle — EN source, RU overlay (see dashboard/i18n_ru.js). */
-const __DASH_LANG_KEY = 'hermes_telemetry_lang';
-let __dashLang = (typeof localStorage !== 'undefined' && localStorage.getItem(__DASH_LANG_KEY)) || 'en';
-document.documentElement.lang = __dashLang;
-function i18n_t(en) {
-  if (__dashLang !== 'ru' || en == null) return en;
-  if (i18nRU[en] != null) return i18nRU[en];
-  for (const k in i18nRU) {
-    if (k.indexOf('${') === -1) continue;
-    const pattern = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\$\\\{[^}]*\\\}/g, '(.*)');
-    const re = new RegExp('^' + pattern + '$');
-    const m = en.match(re);
-    if (m) {
-      let out = i18nRU[k];
-      m.slice(1).forEach((g, i) => { out = out.replace('${' + i + '}', () => g); });
-      return out;
-    }
-  }
-  return en;
-}
 const __staticI18nOrig = [];
 function __applyStaticI18n() {
   while (__staticI18nOrig.length) {
@@ -407,9 +388,9 @@ function __applyStaticI18n() {
     while ((t = walker.nextNode())) {
       if (t.parentElement && t.parentElement.closest && t.parentElement.closest('#app')) continue;
       const k = t.data.replace(/^\s+|\s+$/g, '');
-      if (k && i18nRU[k] != null) {
+      if (k && __RU[k] != null) {
         __staticI18nOrig.push(['text', t, t.data]);
-        t.data = t.data.replace(k, () => i18nRU[k]);
+        t.data = t.data.replace(k, () => __RU[k]);
       }
     }
   } catch (e) {}
@@ -419,17 +400,17 @@ function __applyStaticI18n() {
       ['title', 'aria-label', 'placeholder'].forEach((a) => {
         if (el.hasAttribute(a)) {
           const v = el.getAttribute(a);
-          if (i18nRU[v] != null) {
+          if (__RU[v] != null) {
             __staticI18nOrig.push(['attr', el, v, a]);
-            el.setAttribute(a, i18nRU[v]);
+            el.setAttribute(a, __RU[v]);
           }
         }
       });
     });
   } catch (e) {}
-  if (i18nRU[document.title] != null) {
+  if (__RU[document.title] != null) {
     __staticI18nOrig.push(['title', null, document.title]);
-    document.title = i18nRU[document.title];
+    document.title = __RU[document.title];
   }
 }
 function __syncLangBtn() {
@@ -664,10 +645,10 @@ function badge(raw, map, label) {
   return `<span class="badge ${cls}">${escHtml(text || '—')}</span>`;
 }
 const statusLabelsRU = { ok:'OK', error:'Ошибка', interrupted:'Прервано', running:'Выполняется' };
-const statusLabelsEN = { ok:'OK', error:'Error', interrupted:'Interrupted', running:'Running' };
 const statusBadge = v => {
   const raw = v || '—';
-  const label = __dashLang === 'ru' ? (statusLabelsRU[raw] || raw) : (statusLabelsEN[raw] || raw);
+  // EN path is identity (main rendered raw values); RU is the only override.
+  const label = __dashLang === 'ru' ? (statusLabelsRU[raw] || raw) : raw;
   return badge(raw, { ok: 'ok', error: 'error', interrupted: 'error', running: 'running' }, label);
 };
 const platformBadge = v => badge(v || 'cli', { cron: 'cron', cli: 'cli', telegram: 'cli', discord: 'cli' });
@@ -800,8 +781,8 @@ function renderTokenBreakdown(data) {
   let html = `<div class="table-card"><h3>${i18n_t('Token Breakdown')}</h3>`;
   html += `<table><thead><tr><th>${i18n_t('Type')}</th><th class="text-right">${i18n_t('Count')}</th><th class="text-right">%</th></tr></thead><tbody>`;
   const types = [
-    { key: 'tokens_in', label: i18n_t('In'), color: '#58a6ff' },
-    { key: 'tokens_out', label: i18n_t('Out'), color: '#3fb950' },
+    { key: 'tokens_in', label: i18n_t('Input'), color: '#58a6ff' },
+    { key: 'tokens_out', label: i18n_t('Output'), color: '#3fb950' },
     { key: 'cache_read_tokens', label: i18n_t('Cache'), color: '#d29922' },
     { key: 'reasoning_tokens', label: i18n_t('Reasoning'), color: '#f85149' },
   ];
@@ -999,7 +980,7 @@ function renderModelUsageTrendCard(trendData, shareData) {
   const metricOptions = [
     { value: 'tokens', label: i18n_t('Tokens') },
     { value: 'cost', label: i18n_t('Cost') },
-    { value: 'requests', label: i18n_t('Request') },
+    { value: 'requests', label: i18n_t('Requests') },
     { value: 'share', label: i18n_t('Share %') },
   ];
   const currentLabel = shareData?.current_period || 'latest';
@@ -1086,7 +1067,7 @@ function renderFilterChips() {
   const defs = [
     ['provider', i18n_t('Provider')],
     ['model', i18n_t('Model')],
-    ['day', i18n_t('Daily')],
+    ['day', i18n_t('Day')],
     ['status', i18n_t('Status')],
     ['platform', i18n_t('Platform')],
     ['cron_job_id', i18n_t('Cron')],
@@ -1267,7 +1248,8 @@ function renderForecast(data) {
   html += renderStatCard('forecastSpent', fmtCost(data.spent_so_far_usd), i18n_t('Spent so far'), '');
   html += renderStatCard('forecastAvg', fmtCost(data.avg_daily_usd), i18n_t(`Avg/day (${data.lookback_days || 14}d)`), 'blue');
   html += renderStatCard('forecastProjected', fmtCost(data.projected_total_usd), i18n_t('Projected total'), cls === 'hard' ? 'red' : cls === 'soft' ? 'yellow' : 'green');
-  html += renderStatCard('forecastLimit', fmtCost(data.limit_usd), i18n_t(`Limit (${escHtml(data.window || i18n_t('month'))})`), '');
+  const winLabel = i18n_t(data.window || 'monthly');
+  html += renderStatCard('forecastLimit', fmtCost(data.limit_usd), i18n_t(`Limit (${escHtml(winLabel)})`), '');
   html += '</div>';
   html += `<div class="budget-item"><div class="info"><span>${i18n_t('Projected usage')}</span><span>${pct.toFixed(0)}${i18n_t('% of limit —')} ${(data.status || 'ok').toUpperCase()}</span></div><div class="bar-bg"><div class="bar-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div></div>`;
   html += breach;
@@ -1343,7 +1325,7 @@ function renderRequestForensics(data) {
       t += `<tr class="clickable-row" onclick='openRequestDetail(${Number(row.id || 0)})'><td class="text-muted">${fmtLocalTs(row.ts, {seconds:true})}</td><td><span class="inline-btn data-chip provider-chip" title="${escHtml(provider)}" onclick='event.stopPropagation(); addDrilldown({provider:${jsAttr(provider)}})'>${escHtml(provider)}</span></td><td class="text-muted" title="${escHtml(modelRaw)}"><span class="inline-btn data-chip model-chip" onclick='event.stopPropagation(); addDrilldown({model:${jsAttr(modelRaw)}})'>${escHtml(modelRaw)}</span></td><td><span onclick='event.stopPropagation(); addDrilldown({platform:${jsAttr(platform)}})'>${platformBadge(platform)}</span></td><td><span onclick='event.stopPropagation(); addDrilldown({status:${jsAttr(status)}})'>${statusBadge(status)}</span></td><td>${nf(row.tokens_in || 0)}</td><td>${nf(row.tokens_out || 0)}</td><td>${nf(row.cache_read_tokens || 0)}</td><td>${fmtCost(row.cost_usd)}</td><td>${fmtMs(row.latency_ms)}</td><td>${row.estimated ? statusBadge('running') : statusBadge('ok')}</td><td>${row.provider_assumed ? statusBadge('running') : statusBadge('ok')}</td><td><code>${nf(row.id || 0)}</code></td></tr>`;
     }
   }
-  t += `</tbody></table><div class="table-actions"><div>${i18n_t(`${nf(rows.length)} shown / ${nf(data?.total_requests || 0)} matching request(s)`)}</div><div class="text-muted">${hiddenDeleted ? i18n_t(`${nf(hiddenDeleted)} request(s) hidden with deleted Hermes sessions.`) : i18n_t('Click a request row for request-level analysis.')}</div></div>`;
+  t += `</tbody></table><div class="table-actions"><div>${i18n_t(`${nf(rows.length)} shown / ${nf(data?.total_requests || 0)} matching request(s)`)}</div><div class="text-muted">${hiddenDeleted ? i18n_t(`${nf(hiddenDeleted)} request(s) hidden with deleted Hermes sessions.`) : i18n_t('Click a request row for request-level forensics.')}</div></div>`;
   return renderTableCard('requestForensicsTable', i18n_t('LLM Request Forensics'), t);
 }
 
@@ -1450,10 +1432,10 @@ function renderRunsInvestigation(data, title = i18n_t('Session Investigation')) 
   let emptyReason = '';
   if (!rows.length) {
     if (hasOnlySearch) emptyReason = i18n_t(`No sessions match search “${activeSearch}”.`);
-    else if (hasDrilldown()) emptyReason = i18n_t(`No sessions match the current filters${activeSearch ? ` and search «${activeSearch}»` : ''}.`);
+    else if (hasDrilldown()) emptyReason = activeSearch ? i18n_t(`No sessions match the current filters and search “${activeSearch}”.`) : i18n_t('No sessions match the current filters.');
     else emptyReason = i18n_t('No sessions available for this time range.');
   }
-  html += `<div class="filter-bar"><div class="filter-bar-left">${filterChips || '<div class="subtle-note" style="margin:0">' + i18n_t('Click a provider, model, day, status, platform, tool, or chart segment to see the exact sessions behind the totals.') + '</div>'}${hasDrilldown() ? '<button class="inline-btn" onclick="clearDrilldown()">' + i18n_t('Reset filters') + '</button>' : ''}</div><div class="search-inline"><input id="investigationSearch" type="text" value="${escHtml(activeSearch)}" placeholder="${i18n_t('Search session / model / provider / cron / tool')}" onkeydown="if(event.key===\'Enter\'){applyInvestigationSearch()}" /><button class="inline-btn" onclick="applyInvestigationSearch()">${i18n_t('Search')}</button><button class="inline-btn" onclick="clearInvestigationSearch()">${i18n_t('Clear search')}</button></div></div>`;
+  html += `<div class="filter-bar"><div class="filter-bar-left">${filterChips || '<div class="subtle-note" style="margin:0">' + i18n_t('Click a provider, model, day, status, platform, tool, or chart segment to inspect exact sessions behind the totals.') + '</div>'}${hasDrilldown() ? '<button class="inline-btn" onclick="clearDrilldown()">' + i18n_t('Clear filters') + '</button>' : ''}</div><div class="search-inline"><input id="investigationSearch" type="text" value="${escHtml(activeSearch)}" placeholder="${i18n_t('Search session / model / provider / cron / tool')}" onkeydown="if(event.key===\'Enter\'){applyInvestigationSearch()}" /><button class="inline-btn" onclick="applyInvestigationSearch()">${i18n_t('Search')}</button><button class="inline-btn" onclick="clearInvestigationSearch()">${i18n_t('Clear search')}</button></div></div>`;
   const hiddenDeleted = Number(data?.hidden_deleted_runs || 0);
   const hiddenNote = hiddenDeleted ? i18n_t(`${nf(hiddenDeleted)} deleted Hermes session(s) soft-hidden.`) : i18n_t('Deleted Hermes sessions are hidden by default.');
   html += `<div class="table-actions" style="margin-top:0;margin-bottom:12px"><div>${i18n_t(`${nf(rows.length)} shown / ${nf(data?.total_runs || 0)} matching session(s)`)}</div><div class="text-muted">${escHtml(emptyReason)} ${escHtml(hiddenNote)}</div></div>`;
@@ -1498,7 +1480,7 @@ function closeSessionDetail() {
 
 function renderSessionDetail(data) {
   if (!data || data.error) {
-    return `<div class="error-box">${escHtml(data?.error || i18n_t('Failed to load session details'))}</div>`;
+    return `<div class="error-box">${escHtml(data?.error || i18n_t('Failed to load session detail'))}</div>`;
   }
   const run = data.run || {};
   const llm = data.llm_summary || {};
@@ -1564,7 +1546,7 @@ async function openSessionDetail(sessionId) {
   try {
     const data = await fetchJSON(`/api/session-detail?session_id=${encodeURIComponent(sessionId)}`);
     if (requestId !== latestDrawerRequestId) return;
-    $('#sessionDrawerTitle').textContent = i18n_t(`Session detail · ${data?.run?.platform || i18n_t('session')}`);
+    $('#sessionDrawerTitle').textContent = i18n_t('Session detail') + ' · ' + (data?.run?.platform || i18n_t('session'));
     $('#sessionDrawerSubtitle').textContent = sessionId;
     $('#sessionDrawerBody').innerHTML = renderSessionDetail(data);
   } catch (err) {
@@ -1579,7 +1561,7 @@ function closeRequestDetail() {
 
 function renderRequestDetail(data) {
   if (!data || data.error) {
-    return `<div class="error-box">${escHtml(data?.error || i18n_t('Failed to load request details'))}</div>`;
+    return `<div class="error-box">${escHtml(data?.error || i18n_t('Failed to load request detail'))}</div>`;
   }
   const req = data.request || {};
   const totals = data.session_totals || {};
@@ -1633,7 +1615,7 @@ async function openRequestDetail(requestId) {
   try {
     const data = await fetchJSON(`/api/request-detail?id=${encodeURIComponent(requestId)}`);
     if (requestSeq !== latestRequestDrawerRequestId) return;
-    $('#requestDrawerTitle').textContent = i18n_t(`Request detail · ${data?.request?.provider || i18n_t('provider')}`);
+    $('#requestDrawerTitle').textContent = i18n_t('Request detail') + ' · ' + (data?.request?.provider || i18n_t('provider'));
     $('#requestDrawerSubtitle').textContent = `#${requestId} · ${data?.request?.session_id || ''}`;
     $('#requestDrawerBody').innerHTML = renderRequestDetail(data);
   } catch (err) {
@@ -1678,8 +1660,8 @@ function drawMetricTrendChart(canvasId, rows) {
   });
   const tokenDatasets = [
     { key: 'total_tokens', label: i18n_t('Total'), borderColor: '#22d3ee', backgroundColor: 'rgba(34,211,238,0.16)', fill: true, tension: 0.32, pointRadius: 3, pointHoverRadius: 5, borderWidth: 3, yAxisID: 'y' },
-    { key: 'tokens_in', label: i18n_t('In'), borderColor: '#4f8cff', backgroundColor: 'rgba(79,140,255,0)', fill: false, tension: 0.28, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2.5, yAxisID: 'y1' },
-    { key: 'tokens_out', label: i18n_t('Out'), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0)', fill: false, tension: 0.24, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2.5, yAxisID: 'y1', borderDash: [6, 4] },
+    { key: 'tokens_in', label: i18n_t('Input'), borderColor: '#4f8cff', backgroundColor: 'rgba(79,140,255,0)', fill: false, tension: 0.28, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2.5, yAxisID: 'y1' },
+    { key: 'tokens_out', label: i18n_t('Output'), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0)', fill: false, tension: 0.24, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2.5, yAxisID: 'y1', borderDash: [6, 4] },
     { key: 'cache_read_tokens', label: i18n_t('Cache Read'), borderColor: '#7dd3a0', backgroundColor: 'rgba(125,211,160,0)', fill: false, tension: 0.26, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2.5, yAxisID: 'y', borderDash: [10, 5] },
   ];
   const chosen = currentMetricTrendMetric === 'tokens'
@@ -1844,7 +1826,7 @@ function drawModelUsageTrendChart(canvasId, trendData) {
   if (otherSeries.some(v => v > 0)) {
     datasets.push({ label: i18n_t('Other'), data: otherSeries, backgroundColor: '#8b949e', borderWidth: 0, borderRadius: 4 });
   }
-  const yLabel = currentUsageMetric === 'cost' ? 'USD' : currentUsageMetric === 'requests' ? i18n_t('API Calls') : currentUsageMetric === 'share' ? i18n_t('Share %') : i18n_t('Tokens');
+  const yLabel = currentUsageMetric === 'cost' ? 'USD' : currentUsageMetric === 'requests' ? i18n_t('API calls') : currentUsageMetric === 'share' ? i18n_t('Share %') : i18n_t('Tokens');
   const ctx = canvas.getContext('2d');
   charts[canvasId] = new Chart(ctx, {
     type: 'bar',
@@ -1931,8 +1913,8 @@ function renderDailyCombinedSvg(hostId, dailyTokenChart, dailyModelChart) {
   const modelNames = dailyModelChart?.models || [];
   const modelColors = ['#bc8cff', '#8b949e', '#58a6ff', '#3fb950', '#d29922', '#f85149'];
   const tokenSeries = [
-    { label: i18n_t('In'), color: '#58a6ff', key: 'tokens_in' },
-    { label: i18n_t('Out'), color: '#3fb950', key: 'tokens_out' },
+    { label: i18n_t('Input'), color: '#58a6ff', key: 'tokens_in' },
+    { label: i18n_t('Output'), color: '#3fb950', key: 'tokens_out' },
     { label: i18n_t('Cache Read'), color: '#d29922', key: 'cache_read_tokens' },
     { label: i18n_t('Reasoning'), color: '#f85149', key: 'reasoning_tokens' },
   ];
@@ -2112,10 +2094,10 @@ async function loadAll(options = {}) {
       // --- stat cards ---
       html += '<div class="stat-grid">';
       html += renderStatCard('sessions', nf(r.total_runs), i18n_t('Sessions'), 'blue');
-      html += renderStatCard('ok', nf(r.ok_runs), i18n_t('green'), 'green');
-      html += renderStatCard('failed', nf(r.failed_runs), i18n_t('Error'), 'red');
-      html += renderStatCard('api', nf(l.api_calls), i18n_t('API Calls'), 'purple');
-      html += renderStatCard('tokens', nf(r.tokens_in), i18n_t('Tokens in'), '');
+      html += renderStatCard('ok', nf(r.ok_runs), i18n_t('OK'), 'green');
+      html += renderStatCard('failed', nf(r.failed_runs), i18n_t('Failed'), 'red');
+      html += renderStatCard('api', nf(l.api_calls), i18n_t('API calls'), 'purple');
+      html += renderStatCard('tokens', nf(r.tokens_in), i18n_t('Tokens In'), '');
       html += renderStatCard('cost', fmtCost(r.cost_usd), i18n_t('Cost'), 'yellow');
       html += '</div>';
 
