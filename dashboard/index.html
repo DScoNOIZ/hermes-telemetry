@@ -2017,6 +2017,35 @@ function renderDailyCombinedSvg(hostId, dailyTokenChart, dailyModelChart) {
   host.innerHTML = svg;
 }
 
+function fmtBytes(n) {
+  n = Number(n || 0);
+  if (n < 1024) return nf(n) + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let i = -1;
+  do { n /= 1024; i++; } while (Math.abs(n) >= 1024 && i < units.length - 1);
+  return n.toFixed(1) + ' ' + units[i];
+}
+
+function renderMaintenance(data) {
+  if (!data) return '';
+  const events = data.events || [];
+  const kindLabel = { 'deep-vacuum': 'VACUUM', 'db-hygiene': 'Hygiene', 'manual-cleanup': 'Manual cleanup' };
+  let rows = '';
+  for (const e of events.slice(0, 8)) {
+    const detail = e.saved_bytes != null
+      ? `${fmtBytes(e.saved_bytes)}${e.before_bytes ? ` (${fmtBytes(e.before_bytes)} → ${fmtBytes(e.after_bytes)})` : ''}`
+      : (e.rows_purged ? i18n_t(`${nf(e.rows_purged)} rows`) : '—');
+    rows += `<tr><td>${escHtml(e.ts || '')}</td><td>${i18n_t(kindLabel[e.kind] || e.kind)}</td><td class="text-right">${detail}</td></tr>`;
+  }
+  if (!rows) {
+    rows = `<tr><td colspan="3" class="text-muted">${i18n_t('No maintenance runs yet.')}</td></tr>`;
+  }
+  return `<div class="table-card"><h3>${i18n_t('🧹 Database maintenance')}</h3>
+<table><thead><tr><th>${i18n_t('Time')}</th><th>${i18n_t('Type')}</th><th class="text-right">${i18n_t('Saved')}</th></tr></thead><tbody>${rows}</tbody></table>
+<div class="subtle-note">${i18n_t(`Total saved: ${fmtBytes(data.total_saved_bytes)} across ${nf(data.event_count)} runs · log: ~/.hermes/logs/vacuum-history.log`)}</div>
+</div>`;
+}
+
 async function loadAll(options = {}) {
   if (isLoading && options.reason === 'auto') return;
   const requestId = ++latestLoadRequestId;
@@ -2043,7 +2072,7 @@ async function loadAll(options = {}) {
     const trendLimit = currentUsageGranularity === 'month' ? 18 : currentUsageGranularity === 'week' ? 24 : 21;
     // Model efficiency is loaded lazily on the Breakdown page. It is cache-backed,
     // but keeping it out of this first batch makes the dashboard responsive on a cold cache.
-    const [summary, cron, providers, providerHealth, runsData, budget, tokenBreakdown, modelTokens, dailyTokens, dailyTokenChart, dailyModelChart, modelPeriodTrends, modelShareComparison, cacheEfficiency, requestForensics, toolAnalytics, toolFailureHeatmap, errorCenter, cronFailureWaste, sessionEfficiency, smellsData, forecastData] = await Promise.all([
+    const [summary, cron, providers, providerHealth, runsData, budget, tokenBreakdown, modelTokens, dailyTokens, dailyTokenChart, dailyModelChart, modelPeriodTrends, modelShareComparison, cacheEfficiency, requestForensics, toolAnalytics, toolFailureHeatmap, errorCenter, cronFailureWaste, sessionEfficiency, smellsData, forecastData, maintenanceData] = await Promise.all([
       fetchJSON(`/api/summary?hours=${hours}`),
       fetchJSON(`/api/cron?hours=${hours}`),
       fetchJSON(`/api/providers?hours=${hours}`),
@@ -2066,6 +2095,7 @@ async function loadAll(options = {}) {
       fetchJSON(`/api/efficiency?hours=${hours}`),
       fetchJSON(`/api/smells?hours=${hours}`),
       fetchJSON(`/api/budget/forecast?window=monthly`),
+      fetchJSON(`/api/maintenance`),
     ]);
     if (requestId !== latestLoadRequestId) return;
 
@@ -2097,6 +2127,9 @@ async function loadAll(options = {}) {
 
       // --- burn-rate forecast ---
       html += renderForecast(forecastData);
+
+      // --- db maintenance (vacuum/hygiene history) ---
+      html += renderMaintenance(maintenanceData);
 
       // --- charts row 1: daily cost + top tools ---
       let dailyTitle;

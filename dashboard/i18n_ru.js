@@ -343,5 +343,12 @@ var i18nRU = {
 "smell(s) detected. Severity: HIGH &gt; MED &gt; WARN.": "обнаружено признаков. Серьёзность: HIGH &gt; MED &gt; WARN.",
 "this month": "этот месяц",
 "this week": "эта неделя",
-"Δ Share": "Δ доли"
+"Δ Share": "Δ доли",
+"Hygiene": "Гигиена",
+"Manual cleanup": "Ручная чистка",
+"No maintenance runs yet.": "Запусков обслуживания пока не было.",
+"Saved": "Сэкономлено",
+"Total saved: ${0} across ${1} runs · log: ~/.hermes/logs/vacuum-history.log": "Всего сэкономлено: ${0} за ${1} зап. · журнал: ~/.hermes/logs/vacuum-history.log",
+"${0} rows": "${0} строк",
+"🧹 Database maintenance": "🧹 Обслуживание баз данных"
 };

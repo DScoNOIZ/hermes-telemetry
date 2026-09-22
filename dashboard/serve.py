@@ -3339,6 +3339,29 @@ def api_smells(window_hours=24, include_deleted=False):
 SCRIPT_DIR = Path(__file__).parent
 
 
+def api_maintenance():
+    """DB maintenance history (deep-vacuum / db-hygiene events) from
+    $HERMES_HOME/telemetry/maintenance.jsonl. Self-contained; newest first."""
+    path = HERMES_HOME / "telemetry" / "maintenance.jsonl"
+    events: list[dict] = []
+    if path.exists():
+        for line in path.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except Exception:
+                continue
+    events.sort(key=lambda e: e.get("epoch", 0), reverse=True)
+    total_saved = sum(int(e.get("saved_bytes", 0) or 0) for e in events)
+    return {
+        "total_saved_bytes": total_saved,
+        "events": events[:20],
+        "event_count": len(events),
+    }
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, directory=None, **kwargs):
         super().__init__(*args, directory=str(SCRIPT_DIR), **kwargs)
@@ -3349,6 +3372,9 @@ class Handler(SimpleHTTPRequestHandler):
 
         try:
             # API routes
+            if path == "/api/maintenance":
+                return self._json(api_maintenance())
+
             if path == "/api/summary":
                 qs = parse_qs(parsed.query)
                 return self._json(
